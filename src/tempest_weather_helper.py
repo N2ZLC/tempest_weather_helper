@@ -393,9 +393,6 @@ class TempestWeatherHelper(threading.Thread):
 		#
 		if cls.pressure_mb is None: return None
 
-		#
-		history = cls.__readable_queue.to_list()
-
 		# Slice notation negative indexes allow us to take n-last elements from a list.
 		# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entries; no need to mess around with timestamps.
 		history_from_minutes_ago = cls.__readable_queue.to_list()[-minutes_ago:]
