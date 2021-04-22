@@ -23,6 +23,7 @@ import socket
 import threading
 import time
 
+#
 @enum.unique
 class PrecipitationType(enum.Enum):
 	NONE = 0
@@ -78,22 +79,6 @@ class PressureTrend(enum.Enum):
 			if (pressureTrend.a_mb_change_per_three_hours is None or pressureTrend.a_mb_change_per_three_hours < mb_change) and (pressureTrend.b_mb_change_per_three_hours is None or mb_change <= pressureTrend.b_mb_change_per_three_hours): return pressureTrend
 
 		return None
-
-# TODO:
-# This is an analysis of the data/time curve using calculus. We're looking for a single significant inflection point.
-# Inflection points occur when the second derivative is zero or undefined.
-# Comparing the values on each side of the point can yield these nine possibilities.
-@enum.unique
-class PressureTrendAdvanced(enum.Enum):
-	CONTINUOUSLY_FALLING = 1
-	CONTINUOUSLY_RISING = 2
-	FALLING_AFTER_SLIGHTLY_RISING = 3
-	FALLING_THEN_SLOWLY_RISING = 4
-	FALLING_THEN_STEADY = 5
-	RISING_AFTER_SLIGHTLY_FALLING = 6
-	RISING_THEN_SLOWLY_FALLING = 7
-	RISING_THEN_STEADY = 8
-	STEADY = 9
 
 # Enum value is a tuple representing a range from a_mm_per_minute to b_mm_per_minute, where a_mm_per_minute is inclusive and b_mm_per_minute is exclusive.
 # There are various and conflicting standards for the ranges.
@@ -239,6 +224,7 @@ class TempestWeatherHelper(threading.Thread):
 	lightning_strike_average_distance_miles = None
 	pressure_inhg = None
 	pressure_mb = None
+	pressure_trend_advanced_one_hour_description = None
 	pressure_trend_one_hour_description = None
 	pressure_trend_one_hour_inhg = None
 	pressure_trend_one_hour_mb = None
@@ -375,11 +361,11 @@ class TempestWeatherHelper(threading.Thread):
 			cls.lightning_strike_average_distance_miles = float(round(decimal.Decimal(data['obs'][0][14] * 0.621371), 1))
 			cls.pressure_inhg = float(round(decimal.Decimal(data['obs'][0][6] * 0.02953), 2))
 			cls.pressure_mb = data['obs'][0][6]
-			pressure_trend_one_hour_mb = cls.get_pressure_change_from(60)
+			pressure_trend_one_hour_mb = cls.get_pressure_change_mb_from(60)
 			cls.pressure_trend_one_hour_mb = float(round(pressure_trend_one_hour_mb, 2)) if pressure_trend_one_hour_mb is not None else None
 			cls.pressure_trend_one_hour_inhg = float(round(decimal.Decimal(cls.pressure_trend_one_hour_mb * 0.02953), 2)) if cls.pressure_trend_one_hour_mb is not None else None
 			cls.pressure_trend_one_hour_description = PressureTrend.fromOneHourObservation(cls.pressure_trend_one_hour_mb) if cls.pressure_trend_one_hour_mb is not None else None
-			pressure_trend_three_hours_mb = cls.get_pressure_change_from(180)
+			pressure_trend_three_hours_mb = cls.get_pressure_change_mb_from(180)
 			cls.pressure_trend_three_hours_mb = float(round(pressure_trend_three_hours_mb, 2)) if pressure_trend_three_hours_mb is not None else None
 			cls.pressure_trend_three_hours_inhg = float(round(decimal.Decimal(cls.pressure_trend_three_hours_mb * 0.02953), 2)) if cls.pressure_trend_three_hours_mb is not None else None
 			cls.pressure_trend_three_hours_description = PressureTrend.fromThreeHourObservation(cls.pressure_trend_three_hours_mb) if cls.pressure_trend_three_hours_mb is not None else None
@@ -403,16 +389,35 @@ class TempestWeatherHelper(threading.Thread):
 
 	#
 	@classmethod
-	def get_pressure_change_from(cls, minutes_ago):
+	def get_pressure_change_mb_from(cls, minutes_ago):
+
+		#
+		if cls.pressure_mb is None: return None
 
 		#
 		history = cls.__readable_queue.to_list()
 
-		# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entry; no need to mess around with timestamps.
-		data = history[len(history) - minutes_ago] if len(history) >= minutes_ago else None
+		# Slice notation negative indexes allow us to take n-last elements from a list.
+		# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entries; no need to mess around with timestamps.
+		history_from_minutes_ago = cls.__readable_queue.to_list()[-minutes_ago:]
 
 		#
-		return data['pressure_mb'] - cls.pressure_mb if (data is not None and data['pressure_mb'] is not None and cls.pressure_mb is not None) else None
+		if len(history_from_minutes_ago) == 0: return None
+
+		# Using min/max lets us better handle cases where the pressure fell after slightly rising, or rose after slightly falling.
+		# In such cases, the change is potentially greater than if we merely used the initial starting point.
+		min_pressure_mb = min(history_from_minutes_ago, key = lambda x: x['pressure_mb'])['pressure_mb']
+		max_pressure_mb = max(history_from_minutes_ago, key = lambda x: x['pressure_mb'])['pressure_mb']
+
+		# Rise has a positive value; fall has a negative value.
+		change_from_min = cls.pressure_mb - min_pressure_mb
+		change_from_max = cls.pressure_mb - max_pressure_mb
+
+		# Return the largest magnitude of change.
+		if (max(abs(change_from_min), abs(change_from_max)) == abs(change_from_min)):
+			return change_from_min
+		else:
+			return change_from_max
 
 # Main function is executed only when run as a Python program, not when imported as a module.
 def main():
