@@ -224,7 +224,6 @@ class TempestWeatherHelper(threading.Thread):
 	lightning_strike_average_distance_miles = None
 	pressure_inhg = None
 	pressure_mb = None
-	pressure_trend_advanced_one_hour_description = None
 	pressure_trend_one_hour_description = None
 	pressure_trend_one_hour_inhg = None
 	pressure_trend_one_hour_mb = None
