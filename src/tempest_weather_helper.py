@@ -397,13 +397,17 @@ class TempestWeatherHelper(threading.Thread):
 		# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entries; no need to mess around with timestamps.
 		history_from_minutes_ago = cls.__readable_queue.to_list()[-minutes_ago:]
 
-		#
-		if len(history_from_minutes_ago) == 0: return None
+		# Validate that we have enough data.
+		if len(history_from_minutes_ago) < minutes_ago: return None
+
+		# List comprehension allows us to create a list of specific dictionary key values culled from a list of dictionary objects.
+		# We're only interested in pressure_mb.
+		historical_pressure_mb = [i['pressure_mb'] for i in history_from_minutes_ago]
 
 		# Using min/max lets us better handle cases where the pressure fell after slightly rising, or rose after slightly falling.
 		# In such cases, the change is potentially greater than if we merely used the initial starting point.
-		min_pressure_mb = min(history_from_minutes_ago, key = lambda x: x['pressure_mb'])['pressure_mb']
-		max_pressure_mb = max(history_from_minutes_ago, key = lambda x: x['pressure_mb'])['pressure_mb']
+		min_pressure_mb = min(historical_pressure_mb)
+		max_pressure_mb = max(historical_pressure_mb)
 
 		# Rise has a positive value; fall has a negative value.
 		change_from_min = cls.pressure_mb - min_pressure_mb
