@@ -18,6 +18,7 @@ In addition to Tempest Weather System hub data, **tempest_weather_helper** also 
 * lightning_detected
 * lightning_strike_average_distance_miles
 * pressure_inhg
+* pressure_trend_advanced_three_hours_description
 * pressure_trend_one_hour_description
 * pressure_trend_one_hour_inhg
 * pressure_trend_one_hour_mb
