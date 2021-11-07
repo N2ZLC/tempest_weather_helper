@@ -402,7 +402,7 @@ class TempestWeatherHelper(threading.Thread):
 			cls.uv_index = data['obs'][0][10]
 			cls.uv_exposure_category = UltravioletExposureCategory.fromValue(data['obs'][0][10])
 			cls.wind_gust_meters_per_second = data['obs'][0][3]
-			cls.wind_gust_miles_per_hour = float(round(decimal.Decimal(data['obs'][0][3] * 2.237), 1))
+			cls.wind_gust_miles_per_hour = float(round(decimal.Decimal(data['obs'][0][3] * 2.237), 1)) if data['obs'][0][3] is not None else None
 			cls.wind_gust_description = WindGust.fromValue(cls.wind_gust_miles_per_hour) if cls.wind_gust_miles_per_hour is not None else None
 
 			# Add to 12-hour cache.
