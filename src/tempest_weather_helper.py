@@ -350,7 +350,7 @@ class TempestWeatherHelper(threading.Thread):
 
 			# See: https://weatherflow.github.io/Tempest/api/udp/v143/
 			# We're only interested in general observation packets. Other packets report 'rapid_wind', 'hub_status', etc.
-			if data['type'] != 'obs_st': continue
+			if data['type'] is None or data['type'] != 'obs_st': continue
 
 			# See: https://weatherflow.github.io/Tempest/api/udp/v143/
 			#
@@ -374,13 +374,13 @@ class TempestWeatherHelper(threading.Thread):
 			# 15       Lightning Strike Count
 			# 16       Battery                                   Volts
 			# 17       Report Interval                           Minutes
-			cls.last_updated_epoch = data['obs'][0][0]
-			cls.last_updated_iso_8601 = datetime.datetime.fromtimestamp(data['obs'][0][0]).utcnow().replace(tzinfo=datetime.timezone.utc, microsecond = 0).isoformat()
-			cls.lightning_detected = data['obs'][0][15] > 0
-			cls.lightning_strike_average_distance_km = data['obs'][0][14]
-			cls.lightning_strike_average_distance_miles = float(round(decimal.Decimal(data['obs'][0][14] * 0.621371), 1))
-			cls.pressure_inhg = float(round(decimal.Decimal(data['obs'][0][6] * 0.02953), 2))
-			cls.pressure_mb = data['obs'][0][6]
+			cls.last_updated_epoch = data['obs'][0][0] if data['obs'][0][0] is not None else None
+			cls.last_updated_iso_8601 = datetime.datetime.fromtimestamp(data['obs'][0][0]).utcnow().replace(tzinfo=datetime.timezone.utc, microsecond = 0).isoformat() if data['obs'][0][0] is not None else None
+			cls.lightning_detected = data['obs'][0][15] > 0 if data['obs'][0][15] is not None else None
+			cls.lightning_strike_average_distance_km = data['obs'][0][14] if data['obs'][0][14] is not None else None
+			cls.lightning_strike_average_distance_miles = float(round(decimal.Decimal(data['obs'][0][14] * 0.621371), 1)) if data['obs'][0][14] is not None else None
+			cls.pressure_inhg = float(round(decimal.Decimal(data['obs'][0][6] * 0.02953), 2)) if data['obs'][0][6] is not None else None
+			cls.pressure_mb = data['obs'][0][6] if data['obs'][0][6] is not None else None
 			pressure_trend_one_hour_mb = cls.get_pressure_change_mb_from(60)
 			cls.pressure_trend_one_hour_mb = float(round(pressure_trend_one_hour_mb, 2)) if pressure_trend_one_hour_mb is not None else None
 			cls.pressure_trend_one_hour_inhg = float(round(decimal.Decimal(cls.pressure_trend_one_hour_mb * 0.02953), 2)) if cls.pressure_trend_one_hour_mb is not None else None
@@ -390,18 +390,18 @@ class TempestWeatherHelper(threading.Thread):
 			cls.pressure_trend_three_hours_inhg = float(round(decimal.Decimal(cls.pressure_trend_three_hours_mb * 0.02953), 2)) if cls.pressure_trend_three_hours_mb is not None else None
 			cls.pressure_trend_three_hours_description = PressureTrend.fromThreeHourObservation(cls.pressure_trend_three_hours_mb) if cls.pressure_trend_three_hours_mb is not None else None
 			cls.pressure_trend_advanced_three_hours_description = cls.get_pressure_trend_advanced_from(180)
-			cls.precipitation_mm_per_minute = data['obs'][0][12]
-			cls.precipitation_inches_per_minute = float(round(decimal.Decimal(data['obs'][0][12] * 0.03937), 6))
-			cls.precipitation_description = RainfallIntensity.fromValue(data['obs'][0][12])
-			cls.precipitation_detected = data['obs'][0][12] > 0
-			cls.precipitation_type = PrecipitationType(data['obs'][0][13])
-			cls.relative_humidity = float(round(decimal.Decimal(data['obs'][0][8]), 1))
-			cls.solar_radiation = data['obs'][0][11]
-			cls.temperature_c = data['obs'][0][7]
-			cls.temperature_f = float(round(decimal.Decimal(data['obs'][0][7] * 1.8 + 32), 1))
-			cls.uv_index = data['obs'][0][10]
-			cls.uv_exposure_category = UltravioletExposureCategory.fromValue(data['obs'][0][10])
-			cls.wind_gust_meters_per_second = data['obs'][0][3]
+			cls.precipitation_mm_per_minute = data['obs'][0][12] if data['obs'][0][12] is not None else None
+			cls.precipitation_inches_per_minute = float(round(decimal.Decimal(data['obs'][0][12] * 0.03937), 6)) if data['obs'][0][12] is not None else None
+			cls.precipitation_description = RainfallIntensity.fromValue(data['obs'][0][12]) if data['obs'][0][12] is not None else None
+			cls.precipitation_detected = data['obs'][0][12] > 0 if data['obs'][0][12] is not None else None
+			cls.precipitation_type = PrecipitationType(data['obs'][0][13]) if data['obs'][0][13] is not None else None
+			cls.relative_humidity = float(round(decimal.Decimal(data['obs'][0][8]), 1)) if data['obs'][0][8] is not None else None
+			cls.solar_radiation = data['obs'][0][11] if data['obs'][0][11] is not None else None
+			cls.temperature_c = data['obs'][0][7] if data['obs'][0][7] is not None else None
+			cls.temperature_f = float(round(decimal.Decimal(data['obs'][0][7] * 1.8 + 32), 1)) if data['obs'][0][7] is not None else None
+			cls.uv_index = data['obs'][0][10] if data['obs'][0][10] is not None else None
+			cls.uv_exposure_category = UltravioletExposureCategory.fromValue(data['obs'][0][10]) if data['obs'][0][10] is not None else None
+			cls.wind_gust_meters_per_second = data['obs'][0][3] if data['obs'][0][3] is not None else None
 			cls.wind_gust_miles_per_hour = float(round(decimal.Decimal(data['obs'][0][3] * 2.237), 1)) if data['obs'][0][3] is not None else None
 			cls.wind_gust_description = WindGust.fromValue(cls.wind_gust_miles_per_hour) if cls.wind_gust_miles_per_hour is not None else None
 
