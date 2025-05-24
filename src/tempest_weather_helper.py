@@ -19,15 +19,20 @@ import decimal
 import enum
 import json
 import math
-import queue
 import socket
 import statistics
 import threading
+import traceback
 import time
+
+#
+from collections import deque
 
 #
 @enum.unique
 class PrecipitationType(enum.Enum):
+
+	#
 	NONE = 0
 	RAIN = 1
 	HAIL = 2
@@ -40,6 +45,8 @@ class PrecipitationType(enum.Enum):
 # One-hour STEADY values suggested by William Gidley of WeatherFlow.
 @enum.unique
 class PressureTrend(enum.Enum):
+
+	#
 	FALLING_RAPIDLY = [(None, -2), (None, -6)]
 	FALLING_SLOWLY = [(-2, -0.5), (-6, -1)]
 	STEADY = [(-0.5, 0.5), (-1, 1)]
@@ -86,6 +93,8 @@ class PressureTrend(enum.Enum):
 #
 @enum.unique
 class PressureTrendAdvanced(enum.Enum):
+
+	#
 	CONTINUOUSLY_FALLING = 1
 	CONTINUOUSLY_RISING = 2
 	FALLING_THEN_SLIGHTLY_RISING = 3
@@ -104,6 +113,8 @@ class PressureTrendAdvanced(enum.Enum):
 # See: https://water.usgs.gov/edu/activity-howmuchrain-metric.html
 @enum.unique
 class RainfallIntensity(enum.Enum):
+
+	#
 	NONE = (None, 0.000001)
 	LIGHT = (0.000001, 0.008333)
 	MODERATE = (0.008333, 0.066666)
@@ -133,6 +144,8 @@ class RainfallIntensity(enum.Enum):
 # Enum value is a tuple representing a range from a_index to b_index, where a_index is inclusive and b_index is exclusive.
 @enum.unique
 class UltravioletExposureCategory(enum.Enum):
+
+	#
 	LOW = (None, 3)
 	MODERATE = (3, 6)
 	HIGH = (6, 8)
@@ -162,6 +175,8 @@ class UltravioletExposureCategory(enum.Enum):
 # Enum value is a tuple representing a range from a_mph to b_mph, where a_mph is inclusive and b_mph is exclusive.
 @enum.unique
 class WindGust(enum.Enum):
+
+	#
 	CALM = (None, 1)
 	LIGHT_AIR = (1, 4)
 	LIGHT_BREEZE = (4, 8)
@@ -196,36 +211,6 @@ class WindGust(enum.Enum):
 
 		return None
 
-# Subclass Queue to make it do what we need.
-class ReadableQueue(queue.Queue):
-
-	# Override put()
-	def put(self, *args, **kwargs):
-
-		# Add our extra logic.
-		if self.full():
-
-			# A True value from `full()` does not guarantee that anything remains in the queue when get() is called.
-			try:
-
-				#
-				self.get()
-
-			# 
-			except queue.Queue.Empty:
-
-				#
-				pass
-
-		# Continue normally.
-		queue.Queue.put(self, *args, **kwargs)
-
-	# Returns a copy of all items in the queue in a thread-safe manner without removing them.
-	def to_list(self):
-
-		#
-		with self.mutex: return list(self.queue)
-
 #
 class TempestWeatherHelper(threading.Thread):
 
@@ -233,7 +218,7 @@ class TempestWeatherHelper(threading.Thread):
 	__instance = None
 
 	# Cache approximately 12 hours of data.
-	__readable_queue = ReadableQueue(maxsize = 720)
+	__fifo_queue = deque(maxlen=720)
 
 	# Most of these are raw values from the Tempest hub, but some are derivations.
 	last_updated_epoch = None
@@ -271,7 +256,7 @@ class TempestWeatherHelper(threading.Thread):
 		#
 		if cls.__instance is None:
 
-			# 
+			#
 			cls.__instance = threading.Thread.__new__(cls)
 
 		return cls.__instance
@@ -290,57 +275,120 @@ class TempestWeatherHelper(threading.Thread):
 	def get_for_json(cls):
 
 		#
-		data = {}
-		data['last_updated_epoch'] = cls.last_updated_epoch if cls.last_updated_epoch is not None else None
-		data['last_updated_iso_8601'] = cls.last_updated_iso_8601 if cls.last_updated_iso_8601 is not None else None
-		data['lightning_detected'] = cls.lightning_detected if cls.lightning_detected is not None else None
-		data['lightning_strike_average_distance_km'] = cls.lightning_strike_average_distance_km if cls.lightning_strike_average_distance_km is not None else None
-		data['lightning_strike_average_distance_miles'] = cls.lightning_strike_average_distance_miles if cls.lightning_strike_average_distance_miles is not None else None
-		data['pressure_inhg'] = cls.pressure_inhg if cls.pressure_inhg is not None else None
-		data['pressure_mb'] = cls.pressure_mb if cls.pressure_mb is not None else None
-		data['pressure_trend_advanced_three_hours_description'] = cls.pressure_trend_advanced_three_hours_description.name.replace('_', ' ') if cls.pressure_trend_advanced_three_hours_description is not None else None
-		data['pressure_trend_one_hour_description'] = cls.pressure_trend_one_hour_description.name.replace('_', ' ') if cls.pressure_trend_one_hour_description is not None else None
-		data['pressure_trend_three_hours_description'] = cls.pressure_trend_three_hours_description.name.replace('_', ' ') if cls.pressure_trend_three_hours_description is not None else None
-		data['pressure_trend_one_hour_inhg'] = cls.pressure_trend_one_hour_inhg if cls.pressure_trend_one_hour_inhg is not None else None
-		data['pressure_trend_one_hour_mb'] = cls.pressure_trend_one_hour_mb if cls.pressure_trend_one_hour_mb is not None else None
-		data['pressure_trend_three_hours_inhg'] = cls.pressure_trend_three_hours_inhg if cls.pressure_trend_three_hours_inhg is not None else None
-		data['pressure_trend_three_hours_mb'] = cls.pressure_trend_three_hours_mb if cls.pressure_trend_three_hours_mb is not None else None
-		data['precipitation_inches_per_minute'] = '{0:.6f}'.format(cls.precipitation_inches_per_minute) if (cls.precipitation_inches_per_minute is not None and cls.precipitation_inches_per_minute != 0) else cls.precipitation_inches_per_minute if cls.precipitation_inches_per_minute is not None else None
-		data['precipitation_mm_per_minute'] = cls.precipitation_mm_per_minute if cls.precipitation_mm_per_minute is not None else None
-		data['precipitation_description'] = cls.precipitation_description.name.replace('_', ' ') if cls.precipitation_description is not None else None
-		data['precipitation_detected'] = cls.precipitation_detected if cls.precipitation_detected is not None else None
-		data['precipitation_type'] = cls.precipitation_type.name.replace('_', ' ') if cls.precipitation_type is not None else None
-		data['relative_humidity'] = cls.relative_humidity if cls.relative_humidity is not None else None
-		data['solar_radiation'] = cls.solar_radiation if cls.solar_radiation is not None else None
-		data['temperature_c'] = cls.temperature_c if cls.temperature_c is not None else None
-		data['temperature_f'] = cls.temperature_f if cls.temperature_f is not None else None
-		data['uv_exposure_category'] = cls.uv_exposure_category.name.replace('_', ' ') if cls.uv_exposure_category is not None else None
-		data['uv_index'] = cls.uv_index if cls.uv_index is not None else None
-		data['wind_gust_description'] = cls.wind_gust_description.name.replace('_', ' ') if cls.wind_gust_description is not None else None
-		data['wind_gust_meters_per_second'] = cls.wind_gust_meters_per_second if cls.wind_gust_meters_per_second is not None else None
-		data['wind_gust_miles_per_hour'] = cls.wind_gust_miles_per_hour if cls.wind_gust_miles_per_hour is not None else None
+		try:
+
+			#
+			data = {}
+			data['last_updated_epoch'] = cls.last_updated_epoch if cls.last_updated_epoch is not None else None
+			data['last_updated_iso_8601'] = cls.last_updated_iso_8601 if cls.last_updated_iso_8601 is not None else None
+			data['lightning_detected'] = cls.lightning_detected if cls.lightning_detected is not None else None
+			data['lightning_strike_average_distance_km'] = cls.lightning_strike_average_distance_km if cls.lightning_strike_average_distance_km is not None else None
+			data['lightning_strike_average_distance_miles'] = cls.lightning_strike_average_distance_miles if cls.lightning_strike_average_distance_miles is not None else None
+			data['pressure_inhg'] = cls.pressure_inhg if cls.pressure_inhg is not None else None
+			data['pressure_mb'] = cls.pressure_mb if cls.pressure_mb is not None else None
+			data['pressure_trend_advanced_three_hours_description'] = cls.pressure_trend_advanced_three_hours_description.name.replace('_', ' ') if cls.pressure_trend_advanced_three_hours_description is not None else None
+			data['pressure_trend_one_hour_description'] = cls.pressure_trend_one_hour_description.name.replace('_', ' ') if cls.pressure_trend_one_hour_description is not None else None
+			data['pressure_trend_three_hours_description'] = cls.pressure_trend_three_hours_description.name.replace('_', ' ') if cls.pressure_trend_three_hours_description is not None else None
+			data['pressure_trend_one_hour_inhg'] = cls.pressure_trend_one_hour_inhg if cls.pressure_trend_one_hour_inhg is not None else None
+			data['pressure_trend_one_hour_mb'] = cls.pressure_trend_one_hour_mb if cls.pressure_trend_one_hour_mb is not None else None
+			data['pressure_trend_three_hours_inhg'] = cls.pressure_trend_three_hours_inhg if cls.pressure_trend_three_hours_inhg is not None else None
+			data['pressure_trend_three_hours_mb'] = cls.pressure_trend_three_hours_mb if cls.pressure_trend_three_hours_mb is not None else None
+			data['precipitation_inches_per_minute'] = '{0:.6f}'.format(cls.precipitation_inches_per_minute) if (cls.precipitation_inches_per_minute is not None and cls.precipitation_inches_per_minute != 0) else cls.precipitation_inches_per_minute if cls.precipitation_inches_per_minute is not None else None
+			data['precipitation_mm_per_minute'] = cls.precipitation_mm_per_minute if cls.precipitation_mm_per_minute is not None else None
+			data['precipitation_description'] = cls.precipitation_description.name.replace('_', ' ') if cls.precipitation_description is not None else None
+			data['precipitation_detected'] = cls.precipitation_detected if cls.precipitation_detected is not None else None
+			data['precipitation_type'] = cls.precipitation_type.name.replace('_', ' ') if cls.precipitation_type is not None else None
+			data['relative_humidity'] = cls.relative_humidity if cls.relative_humidity is not None else None
+			data['solar_radiation'] = cls.solar_radiation if cls.solar_radiation is not None else None
+			data['temperature_c'] = cls.temperature_c if cls.temperature_c is not None else None
+			data['temperature_f'] = cls.temperature_f if cls.temperature_f is not None else None
+			data['uv_exposure_category'] = cls.uv_exposure_category.name.replace('_', ' ') if cls.uv_exposure_category is not None else None
+			data['uv_index'] = cls.uv_index if cls.uv_index is not None else None
+			data['wind_gust_description'] = cls.wind_gust_description.name.replace('_', ' ') if cls.wind_gust_description is not None else None
+			data['wind_gust_meters_per_second'] = cls.wind_gust_meters_per_second if cls.wind_gust_meters_per_second is not None else None
+			data['wind_gust_miles_per_hour'] = cls.wind_gust_miles_per_hour if cls.wind_gust_miles_per_hour is not None else None
+
+			#
+			return data
 
 		#
-		return data
+		except Exception as e:
+
+			#
+			print(traceback.format_exc(), file = sys.stderr, flush = True)
 
 	# Note it's get_for_json()—not get_json(). This isn't really JSON as we're using single quotes, None in lieu of null, True/False in lieu of true/false, etc. But it can easily be converted into strict JSON.
 	@classmethod
 	def get_all_for_json(cls):
-		return cls.__readable_queue.to_list()
+		return cls.list(__fifo_queue)
 
-	#
 	@classmethod
 	def run(cls):
 
 		#
-		cls.__socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		cls.__socket.bind(('', 50222)) # 50222 is the UDP port used by the Tempest hub to broadcast weather data.
-
-		#
 		while True:
 
-			# This blocks until something is received.
-			bytes_from_tempest_hub, address = cls.__socket.recvfrom(1024)
+			# Try to create and bind the socket.
+			try:
+
+				# We're interested in UDP.
+				cls.__socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+				
+				# This allows us to rebind if needed and avoid a potential "Address already in use" error.
+				cls.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+				
+				# 50222 is the UDP port used by the Tempest hub to broadcast weather data.
+				cls.__socket.bind(('0.0.0.0', 50222))
+
+				# Start listening loop.
+				while True:
+
+					#
+					try:
+
+						# This blocks until something is received.
+						bytes_from_tempest_hub, address = cls.__socket.recvfrom(4096)
+
+						#
+						cls.handle_data(bytes_from_tempest_hub)
+
+					# 
+					except socket.error as e:
+
+						# Break out to reinitialize the socket.
+						break
+
+			#
+			except Exception as e:
+
+				#
+				print(traceback.format_exc(), file = sys.stderr, flush = True)
+
+			# Cleanup.
+			if cls.__socket:
+
+				# Try to close the socket before we dereference it.
+				try:
+
+					# 
+					cls.__socket.close()
+
+				#
+				except Exception:
+					pass
+
+				# Dereference from memory.
+				cls.__socket = None
+
+			# Pause a bit before attempting to regain the lost connection.
+			time.sleep(5)
+
+	#
+	@classmethod
+	def handle_data(cls, bytes_from_tempest_hub):
+
+		#
+		try:
 
 			#
 			data = json.loads(bytes_from_tempest_hub.decode('utf-8'))
@@ -350,7 +398,7 @@ class TempestWeatherHelper(threading.Thread):
 
 			# See: https://weatherflow.github.io/Tempest/api/udp/v143/
 			# We're only interested in general observation packets. Other packets report 'rapid_wind', 'hub_status', etc.
-			if data['type'] is None or data['type'] != 'obs_st': continue
+			if data['type'] is None or data['type'] != 'obs_st': return
 
 			# See: https://weatherflow.github.io/Tempest/api/udp/v143/
 			#
@@ -405,137 +453,161 @@ class TempestWeatherHelper(threading.Thread):
 			cls.wind_gust_miles_per_hour = float(round(decimal.Decimal(data['obs'][0][3] * 2.237), 1)) if data['obs'][0][3] is not None else None
 			cls.wind_gust_description = WindGust.fromValue(cls.wind_gust_miles_per_hour) if cls.wind_gust_miles_per_hour is not None else None
 
-			# Add to 12-hour cache.
-			cls.__readable_queue.put(cls.get_for_json())
+			# Add to cache.
+			cls.__fifo_queue.append(cls.get_for_json())
+
+		#
+		except Exception as e:
+
+			#
+			print(traceback.format_exc(), file = sys.stderr, flush = True)
 
 	#
 	@classmethod
 	def get_pressure_change_mb_from(cls, minutes_ago):
 
 		#
-		if cls.pressure_mb is None: return None
+		try:
 
-		# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entries; no need to mess around with timestamps.
-		# Slice notation negative indexes allow us to take n-last elements from a list.
-		history_from_minutes_ago = cls.__readable_queue.to_list()[-minutes_ago:]
+			#
+			if cls.pressure_mb is None: return None
 
-		# We're only interested in pressure_mb.
-		# List comprehension allows us to create a list of specific dictionary key values culled from a list of dictionary objects.
-		historical_pressure_mb = [i['pressure_mb'] for i in history_from_minutes_ago]
+			# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entries; no need to mess around with timestamps.
+			# Slice notation negative indexes allow us to take n-last elements from a list.
+			history_from_minutes_ago = list(cls.__fifo_queue)[-minutes_ago:]
 
-		# Validate that we have enough data.
-		if len(historical_pressure_mb) < minutes_ago: return None
+			# We're only interested in pressure_mb.
+			# List comprehension allows us to create a list of specific dictionary key values culled from a list of dictionary objects.
+			historical_pressure_mb = [i['pressure_mb'] for i in history_from_minutes_ago]
 
-		# Using min/max lets us better handle cases where the pressure fell after slightly rising, or rose after slightly falling.
-		# In such cases, the change is potentially greater than if we merely used the initial starting point.
-		min_pressure_mb = min(historical_pressure_mb)
-		max_pressure_mb = max(historical_pressure_mb)
+			# Validate that we have enough data.
+			if len(historical_pressure_mb) < minutes_ago: return None
 
-		# Rise has a positive value; fall has a negative value.
-		change_from_min = cls.pressure_mb - min_pressure_mb
-		change_from_max = cls.pressure_mb - max_pressure_mb
+			# Using min/max lets us better handle cases where the pressure fell after slightly rising, or rose after slightly falling.
+			# In such cases, the change is potentially greater than if we merely used the initial starting point.
+			min_pressure_mb = min(historical_pressure_mb)
+			max_pressure_mb = max(historical_pressure_mb)
 
-		# Return the largest magnitude of change.
-		if (max(abs(change_from_min), abs(change_from_max)) == abs(change_from_min)):
-			return change_from_min
-		else:
-			return change_from_max
+			# Rise has a positive value; fall has a negative value.
+			change_from_min = cls.pressure_mb - min_pressure_mb
+			change_from_max = cls.pressure_mb - max_pressure_mb
+
+			# Return the largest magnitude of change.
+			if (max(abs(change_from_min), abs(change_from_max)) == abs(change_from_min)):
+				return change_from_min
+			else:
+				return change_from_max
+
+		#
+		except Exception as e:
+
+			#
+			print(traceback.format_exc(), file = sys.stderr, flush = True)
 
 	# Here we attempt to analyze curves with some very simplistic rules, and without importing big gun packages like NumPy and SciPy.
 	# It works because pressure curves generally fall into a finite number of patterns for the time range we're using. Zoom out and all bets are off!
 	@classmethod
 	def get_pressure_trend_advanced_from(cls, minutes_ago):
 
-		# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entries; no need to mess around with timestamps.
-		# Slice notation negative indexes allow us to take n-last elements from a list.
-		history_from_minutes_ago = cls.__readable_queue.to_list()[-minutes_ago:]
+		#
+		try:
 
-		# We're only interested in pressure_mb.
-		# List comprehension allows us to create an aggregated list of specific dictionary key values culled from a list of dictionary objects.
-		historical_pressure_mb = [i['pressure_mb'] for i in history_from_minutes_ago]
+			# This works because the Tempest hub sends updates once per minute. So we use the index of the updates themselves to get the correct entries; no need to mess around with timestamps.
+			# Slice notation negative indexes allow us to take n-last elements from a list.
+			history_from_minutes_ago = list(cls.__fifo_queue)[-minutes_ago:]
 
-		# Validate that we have enough data.
-		if len(historical_pressure_mb) < minutes_ago: return None
+			# We're only interested in pressure_mb.
+			# List comprehension allows us to create an aggregated list of specific dictionary key values culled from a list of dictionary objects.
+			historical_pressure_mb = [i['pressure_mb'] for i in history_from_minutes_ago]
 
-		# We also want to examine the first and last quarters of data to detect areas of flatness.
-		# Slice notation negative indexes allow us to take n-last elements from a list.
-		first_quarter_historical_pressure_mb = historical_pressure_mb[-minutes_ago:-((minutes_ago // 4) * 3)]
-		last_quarter_historical_pressure_mb = historical_pressure_mb[-(minutes_ago // 4):]
+			# Validate that we have enough data.
+			if len(historical_pressure_mb) < minutes_ago: return None
 
-		# Critical values that will help us to characterize the pressure curve.
-		min_pressure_mb = min(historical_pressure_mb)
-		max_pressure_mb = max(historical_pressure_mb)
-		variance_mb = statistics.pstdev(historical_pressure_mb)
-		variance_of_first_quarter_mb = statistics.pstdev(first_quarter_historical_pressure_mb)
-		variance_of_last_quarter_mb = statistics.pstdev(last_quarter_historical_pressure_mb)
-		equals_tolerance_mb = (PressureTrend.STEADY.b_mb_change_per_three_hours - PressureTrend.STEADY.a_mb_change_per_three_hours) / 2
+			# We also want to examine the first and last quarters of data to detect areas of flatness.
+			# Slice notation negative indexes allow us to take n-last elements from a list.
+			first_quarter_historical_pressure_mb = historical_pressure_mb[-minutes_ago:-((minutes_ago // 4) * 3)]
+			last_quarter_historical_pressure_mb = historical_pressure_mb[-(minutes_ago // 4):]
 
-		# Simplify booleans for clarity.
-		# Here we set our scale/sensitivity thresholds and make use of math.isclose() to add some fuzziness.
-		# Zoomed in, even a relatively flat curve may appear highly variable. But zoom out too much and everything looks flat.
-		# The scale we're interested in is approximately a 6-millibar range (based on the values we use in our PressureTrend enum)
-		all_steady = math.isclose(variance_mb, 0, abs_tol = equals_tolerance_mb / 4)
-		current_pressure_equals_max = math.isclose(cls.pressure_mb, max_pressure_mb, abs_tol = equals_tolerance_mb)
-		current_pressure_equals_min = math.isclose(cls.pressure_mb, min_pressure_mb, abs_tol = equals_tolerance_mb)
-		current_pressure_greater_than_min = cls.pressure_mb > min_pressure_mb and math.isclose(cls.pressure_mb, min_pressure_mb, abs_tol = equals_tolerance_mb) is False
-		current_pressure_less_than_max = cls.pressure_mb < max_pressure_mb and math.isclose(cls.pressure_mb, max_pressure_mb, abs_tol = equals_tolerance_mb) is False
-		ends_steady = math.isclose(variance_of_last_quarter_mb, 0, abs_tol = equals_tolerance_mb / 8)
-		ends_unsteady = ends_steady is False
-		past_pressure_equals_max = math.isclose(historical_pressure_mb[0], max_pressure_mb, abs_tol = equals_tolerance_mb)
-		past_pressure_equals_min = math.isclose(historical_pressure_mb[0], min_pressure_mb, abs_tol = equals_tolerance_mb)
-		past_pressure_greater_than_current = historical_pressure_mb[0] > cls.pressure_mb and math.isclose(historical_pressure_mb[0], cls.pressure_mb, abs_tol = equals_tolerance_mb) is False
-		past_pressure_greater_than_min = historical_pressure_mb[0] > min_pressure_mb and math.isclose(historical_pressure_mb[0], min_pressure_mb, abs_tol = equals_tolerance_mb) is False
-		past_pressure_less_than_current = historical_pressure_mb[0] < cls.pressure_mb and math.isclose(historical_pressure_mb[0], cls.pressure_mb, abs_tol = equals_tolerance_mb) is False
-		past_pressure_less_than_max = historical_pressure_mb[0] < max_pressure_mb and math.isclose(historical_pressure_mb[0], max_pressure_mb, abs_tol = equals_tolerance_mb) is False
-		starts_steady = math.isclose(variance_of_first_quarter_mb, 0, abs_tol = equals_tolerance_mb / 8)
-		starts_unsteady = starts_steady is False
+			# Critical values that will help us to characterize the pressure curve.
+			min_pressure_mb = min(historical_pressure_mb)
+			max_pressure_mb = max(historical_pressure_mb)
+			variance_mb = statistics.pstdev(historical_pressure_mb)
+			variance_of_first_quarter_mb = statistics.pstdev(first_quarter_historical_pressure_mb)
+			variance_of_last_quarter_mb = statistics.pstdev(last_quarter_historical_pressure_mb)
+			equals_tolerance_mb = (PressureTrend.STEADY.b_mb_change_per_three_hours - PressureTrend.STEADY.a_mb_change_per_three_hours) / 2
 
-		# CONTINUOUSLY_FALLING
-		if starts_unsteady and past_pressure_greater_than_current and past_pressure_equals_max and current_pressure_equals_min and ends_unsteady:
-			return PressureTrendAdvanced.CONTINUOUSLY_FALLING
+			# Simplify booleans for clarity.
+			# Here we set our scale/sensitivity thresholds and make use of math.isclose() to add some fuzziness.
+			# Zoomed in, even a relatively flat curve may appear highly variable. But zoom out too much and everything looks flat.
+			# The scale we're interested in is approximately a 6-millibar range (based on the values we use in our PressureTrend enum)
+			all_steady = math.isclose(variance_mb, 0, abs_tol = equals_tolerance_mb / 4)
+			current_pressure_equals_max = math.isclose(cls.pressure_mb, max_pressure_mb, abs_tol = equals_tolerance_mb)
+			current_pressure_equals_min = math.isclose(cls.pressure_mb, min_pressure_mb, abs_tol = equals_tolerance_mb)
+			current_pressure_greater_than_min = cls.pressure_mb > min_pressure_mb and math.isclose(cls.pressure_mb, min_pressure_mb, abs_tol = equals_tolerance_mb) is False
+			current_pressure_less_than_max = cls.pressure_mb < max_pressure_mb and math.isclose(cls.pressure_mb, max_pressure_mb, abs_tol = equals_tolerance_mb) is False
+			ends_steady = math.isclose(variance_of_last_quarter_mb, 0, abs_tol = equals_tolerance_mb / 8)
+			ends_unsteady = ends_steady is False
+			past_pressure_equals_max = math.isclose(historical_pressure_mb[0], max_pressure_mb, abs_tol = equals_tolerance_mb)
+			past_pressure_equals_min = math.isclose(historical_pressure_mb[0], min_pressure_mb, abs_tol = equals_tolerance_mb)
+			past_pressure_greater_than_current = historical_pressure_mb[0] > cls.pressure_mb and math.isclose(historical_pressure_mb[0], cls.pressure_mb, abs_tol = equals_tolerance_mb) is False
+			past_pressure_greater_than_min = historical_pressure_mb[0] > min_pressure_mb and math.isclose(historical_pressure_mb[0], min_pressure_mb, abs_tol = equals_tolerance_mb) is False
+			past_pressure_less_than_current = historical_pressure_mb[0] < cls.pressure_mb and math.isclose(historical_pressure_mb[0], cls.pressure_mb, abs_tol = equals_tolerance_mb) is False
+			past_pressure_less_than_max = historical_pressure_mb[0] < max_pressure_mb and math.isclose(historical_pressure_mb[0], max_pressure_mb, abs_tol = equals_tolerance_mb) is False
+			starts_steady = math.isclose(variance_of_first_quarter_mb, 0, abs_tol = equals_tolerance_mb / 8)
+			starts_unsteady = starts_steady is False
 
-		# CONTINUOUSLY_RISING
-		elif starts_unsteady and past_pressure_less_than_current and past_pressure_equals_min and current_pressure_equals_max and ends_unsteady:
-			return PressureTrendAdvanced.CONTINUOUSLY_RISING
+			# CONTINUOUSLY_FALLING
+			if starts_unsteady and past_pressure_greater_than_current and past_pressure_equals_max and current_pressure_equals_min and ends_unsteady:
+				return PressureTrendAdvanced.CONTINUOUSLY_FALLING
 
-		# FALLING_THEN_SLIGHTLY_RISING
-		elif starts_unsteady and past_pressure_greater_than_current and current_pressure_greater_than_min and ends_unsteady:
-			return PressureTrendAdvanced.FALLING_THEN_SLIGHTLY_RISING
+			# CONTINUOUSLY_RISING
+			elif starts_unsteady and past_pressure_less_than_current and past_pressure_equals_min and current_pressure_equals_max and ends_unsteady:
+				return PressureTrendAdvanced.CONTINUOUSLY_RISING
 
-		# FALLING_THEN_STEADY
-		elif starts_unsteady and past_pressure_greater_than_current and current_pressure_equals_min and ends_steady:
-			return PressureTrendAdvanced.FALLING_THEN_STEADY
+			# FALLING_THEN_SLIGHTLY_RISING
+			elif starts_unsteady and past_pressure_greater_than_current and current_pressure_greater_than_min and ends_unsteady:
+				return PressureTrendAdvanced.FALLING_THEN_SLIGHTLY_RISING
 
-		# RISING_THEN_SLIGHTLY_FALLING
-		elif starts_unsteady and past_pressure_less_than_current and current_pressure_less_than_max and ends_unsteady:
-			return PressureTrendAdvanced.RISING_THEN_SLIGHTLY_FALLING
+			# FALLING_THEN_STEADY
+			elif starts_unsteady and past_pressure_greater_than_current and current_pressure_equals_min and ends_steady:
+				return PressureTrendAdvanced.FALLING_THEN_STEADY
 
-		# RISING_THEN_STEADY
-		elif starts_unsteady and past_pressure_less_than_current and current_pressure_equals_max and ends_steady:
-			return PressureTrendAdvanced.RISING_THEN_STEADY
+			# RISING_THEN_SLIGHTLY_FALLING
+			elif starts_unsteady and past_pressure_less_than_current and current_pressure_less_than_max and ends_unsteady:
+				return PressureTrendAdvanced.RISING_THEN_SLIGHTLY_FALLING
 
-		# SLIGHTLY_FALLING_THEN_RISING
-		elif starts_unsteady and past_pressure_greater_than_min and past_pressure_less_than_current and current_pressure_equals_max and ends_unsteady:
-			return PressureTrendAdvanced.SLIGHTLY_FALLING_THEN_RISING
+			# RISING_THEN_STEADY
+			elif starts_unsteady and past_pressure_less_than_current and current_pressure_equals_max and ends_steady:
+				return PressureTrendAdvanced.RISING_THEN_STEADY
 
-		# SLIGHTLY_RISING_THEN_FALLING
-		elif starts_unsteady and past_pressure_less_than_max and past_pressure_greater_than_current and current_pressure_equals_min and ends_unsteady:
-			return PressureTrendAdvanced.SLIGHTLY_RISING_THEN_FALLING
+			# SLIGHTLY_FALLING_THEN_RISING
+			elif starts_unsteady and past_pressure_greater_than_min and past_pressure_less_than_current and current_pressure_equals_max and ends_unsteady:
+				return PressureTrendAdvanced.SLIGHTLY_FALLING_THEN_RISING
 
-		# STEADY
-		elif all_steady:
-			return PressureTrendAdvanced.STEADY
+			# SLIGHTLY_RISING_THEN_FALLING
+			elif starts_unsteady and past_pressure_less_than_max and past_pressure_greater_than_current and current_pressure_equals_min and ends_unsteady:
+				return PressureTrendAdvanced.SLIGHTLY_RISING_THEN_FALLING
 
-		# STEADY_THEN_FALLING
-		elif starts_steady and past_pressure_greater_than_current and current_pressure_equals_min and ends_unsteady:
-			return PressureTrendAdvanced.STEADY_THEN_FALLING
+			# STEADY
+			elif all_steady:
+				return PressureTrendAdvanced.STEADY
 
-		# STEADY_THEN_RISING
-		elif starts_steady and past_pressure_less_than_current and current_pressure_equals_max and ends_unsteady:
-			return PressureTrendAdvanced.STEADY_THEN_RISING
+			# STEADY_THEN_FALLING
+			elif starts_steady and past_pressure_greater_than_current and current_pressure_equals_min and ends_unsteady:
+				return PressureTrendAdvanced.STEADY_THEN_FALLING
 
-		# UNSTEADY_OR_INCONCLUSIVE
-		else: return PressureTrendAdvanced.UNSTEADY_OR_INCONCLUSIVE
+			# STEADY_THEN_RISING
+			elif starts_steady and past_pressure_less_than_current and current_pressure_equals_max and ends_unsteady:
+				return PressureTrendAdvanced.STEADY_THEN_RISING
+
+			# UNSTEADY_OR_INCONCLUSIVE
+			else: return PressureTrendAdvanced.UNSTEADY_OR_INCONCLUSIVE
+
+		#
+		except Exception as e:
+
+			#
+			print(traceback.format_exc(), file = sys.stderr, flush = True)
 
 # Main function is executed only when run as a Python program, not when imported as a module.
 def main():
@@ -548,7 +620,7 @@ def main():
 	while True:
 
 		#
-		print(tempestWeatherHelper.get_for_json())
+		print(tempestWeatherHelper.get_for_json(), file = sys.stdout, flush = True)
 
 		#
 		time.sleep(55)
